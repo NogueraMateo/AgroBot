@@ -11,7 +11,7 @@ class Node():
         fertilizer_amount: int = 0,
         fertilized_crop: bool = False,
         fertilized_crops: list[tuple[int, int]] = [],
-        parent_node: Node = None
+        parent_node: "Node" = None
     ):
         
         self.matrix = matrix
