@@ -3,6 +3,7 @@ from queue import Queue
 from models.node import Node, get_next_possible_operators
 from models.operators import AgroBotOperators
 from search.helpers import get_next_move_node, is_node_the_goal
+from search.ucs import reconstruct_path
 
 
 def is_cicle(node: Node) -> bool:
@@ -26,6 +27,8 @@ def breadth_search(root: Node):
 
     queue.put(root)
 
+    expanded_nodes = 0
+
     while True:
         if queue.empty():
             print("Busqueda fallida terminando algoritmo..")
@@ -34,11 +37,16 @@ def breadth_search(root: Node):
         node:Node = queue.get()
 
         if is_node_the_goal(node):
-            print("Solución encontrada")
-            print(node)
-            for row in node.get_matrix():
-                print(row)
-            return True
+            solution_path = reconstruct_path(node)
+            return {
+                "found": True,
+                "path": solution_path,
+                "cost": node.get_cost(),
+                "expanded_nodes": expanded_nodes,
+                "depth": node.get_depth(),
+                "execution_time": 0,
+                "status": "Solución encontrada"
+            }
 
         next_ops = get_next_possible_operators(node)
         matrix = node.get_matrix()
@@ -67,8 +75,10 @@ def breadth_search(root: Node):
                                     next_col,
                                     node
                                 )
-            
             if is_cicle(next_possible_node):
                 continue
                                 
             queue.put(next_possible_node)
+
+        expanded_nodes += 1
+        

@@ -2,6 +2,7 @@
 # ADMINISTRADOR DE ALGORITMOS DE BÚSQUEDA
 # ==========================================
 
+from search.bfs import breadth_search
 from search.ucs import uniform_cost_search
 
 
@@ -13,7 +14,7 @@ ALGORITHMS = {
 
     "No informada": {
 
-        "Amplitud": None,
+        "Amplitud": breadth_search,
 
         "Costo uniforme": uniform_cost_search,
 
