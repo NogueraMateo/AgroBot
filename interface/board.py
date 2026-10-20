@@ -1,18 +1,13 @@
-import pygame
-
 from pathlib import Path
+
+import pygame
 
 
 # ==========================================
-# RUTA DE LAS IMÁGENES
+# CONFIGURACIÓN
 # ==========================================
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-
-
-# ==========================================
-# COLORES
-# ==========================================
 
 COLORS = {
     "free": (232, 242, 225),
@@ -23,8 +18,9 @@ COLORS = {
     "plane": (236, 225, 249),
     "treated": (210, 239, 207),
     "grid": (203, 218, 198),
-    "white": (255, 255, 255),
     "text": (70, 85, 80),
+    "robot_border": (65, 139, 210),
+    "plane_border": (156, 116, 200),
 }
 
 
@@ -56,7 +52,10 @@ IMAGE_FILES = {
 }
 
 
-# Símbolos alternativos si falta una imagen
+# ==========================================
+# SÍMBOLOS ALTERNATIVOS
+# ==========================================
+
 CELL_SYMBOLS = {
     2: "R",
     3: "C",
@@ -71,7 +70,6 @@ CELL_SYMBOLS = {
 # ==========================================
 
 SPRITES = {}
-
 SCALED_SPRITES = {}
 
 
@@ -81,34 +79,36 @@ SCALED_SPRITES = {}
 
 def load_sprites():
     """
-    Carga las imágenes de los elementos
-    del mundo una sola vez.
+    Carga las imágenes PNG desde assets.
     """
+
+    SPRITES.clear()
+    SCALED_SPRITES.clear()
 
     for value, filename in IMAGE_FILES.items():
 
         image_path = ASSETS_DIR / filename
 
-        if image_path.exists():
-
-            try:
-
-                image = pygame.image.load(
-                    str(image_path)
-                ).convert_alpha()
-
-                SPRITES[value] = image
-
-            except pygame.error as error:
-
-                print(
-                    f"Error al cargar {filename}: {error}"
-                )
-
-        else:
+        if not image_path.exists():
 
             print(
                 f"Imagen no encontrada: {filename}"
+            )
+
+            continue
+
+        try:
+
+            image = pygame.image.load(
+                str(image_path)
+            ).convert_alpha()
+
+            SPRITES[value] = image
+
+        except pygame.error as error:
+
+            print(
+                f"Error al cargar {filename}: {error}"
             )
 
 
@@ -118,8 +118,8 @@ def load_sprites():
 
 def get_scaled_sprite(value, size):
     """
-    Devuelve una imagen adaptada al
-    tamaño de la casilla.
+    Devuelve una imagen ajustada al tamaño
+    de la casilla, conservando su proporción.
     """
 
     if value not in SPRITES:
@@ -127,15 +127,12 @@ def get_scaled_sprite(value, size):
 
     key = (value, size)
 
-    # Reutilizar imagen si ya fue escalada
     if key in SCALED_SPRITES:
-
         return SCALED_SPRITES[key]
 
-    original_image = SPRITES[value]
+    original = SPRITES[value]
 
-    # Mantener proporción de la imagen
-    width, height = original_image.get_size()
+    width, height = original.get_size()
 
     scale = min(
         size / width,
@@ -152,34 +149,27 @@ def get_scaled_sprite(value, size):
         int(height * scale)
     )
 
-    scaled_image = pygame.transform.smoothscale(
-        original_image,
+    sprite = pygame.transform.smoothscale(
+        original,
         (new_width, new_height)
     )
 
-    SCALED_SPRITES[key] = scaled_image
+    SCALED_SPRITES[key] = sprite
 
-    return scaled_image
+    return sprite
 
 
 # ==========================================
-# DIBUJAR ELEMENTO
+# DIBUJAR UNA IMAGEN
 # ==========================================
 
-def draw_element(
-    screen,
-    value,
-    rect,
-    symbol_font
-):
+def draw_element(screen, value, rect, font):
     """
-    Dibuja una imagen en la casilla.
+    Dibuja el PNG del elemento.
 
-    Si no existe la imagen, utiliza
-    una letra como alternativa.
+    Si falta su imagen, utiliza una letra.
     """
 
-    # Dejar un margen dentro de la casilla
     image_size = max(
         1,
         int(rect.width * 0.82)
@@ -205,36 +195,161 @@ def draw_element(
 
         symbol = CELL_SYMBOLS.get(value)
 
-        if symbol:
+        if symbol is None:
+            return
 
-            text = symbol_font.render(
-                symbol,
-                True,
-                COLORS["text"]
-            )
+        text = font.render(
+            symbol,
+            True,
+            COLORS["text"]
+        )
 
-            text_rect = text.get_rect(
-                center=rect.center
-            )
+        text_rect = text.get_rect(
+            center=rect.center
+        )
 
-            screen.blit(
-                text,
-                text_rect
-            )
+        screen.blit(
+            text,
+            text_rect
+        )
+
+
+# ==========================================
+# IDENTIFICAR SI ESTÁ USANDO AVIONETA
+# ==========================================
+
+def is_using_plane(node):
+    """
+    La avioneta se muestra únicamente
+    después de abordarla y mientras
+    quede combustible.
+
+    Cuando el combustible llega a cero,
+    vuelve a mostrarse AgroBot.
+    """
+
+    if node is None:
+        return False
+
+    return (
+        node.get_plane_boarded()
+        and node.get_fuel_remaining() > 0
+    )
+
+
+# ==========================================
+# RECONSTRUIR TERRENO
+# ==========================================
+
+def build_terrain(matrix, node=None):
+    """
+    Reconstruye la capa del terreno
+    sin modificar la matriz del nodo.
+
+    La avioneta:
+        - Aparece antes del abordaje.
+        - Desaparece de su posición inicial
+          cuando el robot la aborda.
+        - No vuelve a aparecer después
+          de agotarse el combustible.
+    """
+
+    terrain = [
+        row.copy()
+        for row in matrix
+    ]
+
+    if node is None:
+        return terrain
+
+    # --------------------------------------
+    # ELIMINAR ROBOT DE LA CAPA DEL TERRENO
+    # --------------------------------------
+
+    robot_row, robot_col = node.get_bot_pos()
+
+    terrain[robot_row][robot_col] = 0
+
+    # --------------------------------------
+    # RESTAURAR DEPÓSITO DE FERTILIZANTE
+    # --------------------------------------
+
+    fertilizer_pos = node.get_fertilizer_pos()
+
+    if fertilizer_pos is not None:
+
+        row, col = fertilizer_pos
+
+        terrain[row][col] = 4
+
+    # --------------------------------------
+    # MOSTRAR U OCULTAR AVIONETA ORIGINAL
+    # --------------------------------------
+
+    plane_pos = node.get_plane_pos()
+
+    if plane_pos is not None:
+
+        row, col = plane_pos
+
+        if node.get_plane_boarded():
+
+            # Ya fue utilizada.
+            # No debe quedar otra avioneta
+            # en la posición inicial.
+            terrain[row][col] = 0
+
+        else:
+
+            # Todavía está disponible.
+            terrain[row][col] = 5
+
+    # --------------------------------------
+    # REPRESENTAR CULTIVOS
+    # --------------------------------------
+
+    treated_crops = set(
+        node.get_fertilized_crops()
+    )
+
+    for row, col in node.get_dry_crops():
+
+        if (row, col) in treated_crops:
+
+            terrain[row][col] = 6
+
+        else:
+
+            terrain[row][col] = 3
+
+    return terrain
 
 
 # ==========================================
 # DIBUJAR TABLERO
 # ==========================================
 
-def draw_board(screen, matrix, area):
+def draw_board(screen, matrix, area, node=None):
     """
-    Dibuja el mundo AgroBot
-    utilizando imágenes PNG.
+    Dibuja el tablero mediante dos capas:
+
+        1. Terreno y elementos.
+        2. AgroBot o avioneta en movimiento.
+
+    Cuando AgroBot aborda la avioneta,
+    su imagen cambia automáticamente.
+
+    Si se agota el combustible,
+    se muestra nuevamente AgroBot.
     """
 
-    rows = len(matrix)
-    cols = len(matrix[0])
+    terrain = build_terrain(
+        matrix,
+        node
+    )
+
+    rows = len(terrain)
+    cols = len(terrain[0])
 
     available_width = area.width - 35
     available_height = area.height - 35
@@ -259,7 +374,10 @@ def draw_board(screen, matrix, area):
         + 10
     )
 
-    # Fuentes
+    # --------------------------------------
+    # FUENTES
+    # --------------------------------------
+
     symbol_font = pygame.font.SysFont(
         "arial",
         max(16, cell_size // 2),
@@ -272,7 +390,7 @@ def draw_board(screen, matrix, area):
     )
 
     # ======================================
-    # COORDENADAS DE COLUMNAS
+    # NÚMEROS DE COLUMNAS
     # ======================================
 
     for col in range(cols):
@@ -289,14 +407,15 @@ def draw_board(screen, matrix, area):
             + cell_size // 2
         )
 
-        text_rect = text.get_rect(
-            center=(x, board_y - 17)
+        screen.blit(
+            text,
+            text.get_rect(
+                center=(x, board_y - 17)
+            )
         )
 
-        screen.blit(text, text_rect)
-
     # ======================================
-    # COORDENADAS DE FILAS
+    # NÚMEROS DE FILAS
     # ======================================
 
     for row in range(rows):
@@ -313,21 +432,22 @@ def draw_board(screen, matrix, area):
             + cell_size // 2
         )
 
-        text_rect = text.get_rect(
-            center=(board_x - 18, y)
+        screen.blit(
+            text,
+            text.get_rect(
+                center=(board_x - 18, y)
+            )
         )
 
-        screen.blit(text, text_rect)
-
     # ======================================
-    # CASILLAS
+    # CAPA 1: TERRENO
     # ======================================
 
     for row in range(rows):
 
         for col in range(cols):
 
-            value = matrix[row][col]
+            value = terrain[row][col]
 
             x = board_x + col * cell_size
             y = board_y + row * cell_size
@@ -344,7 +464,7 @@ def draw_board(screen, matrix, area):
                 COLORS["free"]
             )
 
-            # Fondo de casilla
+            # Fondo de la casilla
             pygame.draw.rect(
                 screen,
                 color,
@@ -352,7 +472,7 @@ def draw_board(screen, matrix, area):
                 border_radius=6
             )
 
-            # Borde
+            # Borde de la casilla
             pygame.draw.rect(
                 screen,
                 COLORS["grid"],
@@ -361,7 +481,7 @@ def draw_board(screen, matrix, area):
                 border_radius=6
             )
 
-            # Dibujar imagen
+            # Imagen del elemento
             if value in IMAGE_FILES:
 
                 draw_element(
@@ -370,3 +490,102 @@ def draw_board(screen, matrix, area):
                     rect,
                     symbol_font
                 )
+
+    # ======================================
+    # CAPA 2: ROBOT O AVIONETA EN MOVIMIENTO
+    # ======================================
+
+    robot_row = None
+    robot_col = None
+
+    if node is not None:
+
+        robot_row, robot_col = (
+            node.get_bot_pos()
+        )
+
+    else:
+
+        # Compatibilidad con matrices
+        # que todavía se dibujen sin nodo.
+        for row in range(rows):
+
+            for col in range(cols):
+
+                if matrix[row][col] == 2:
+
+                    robot_row = row
+                    robot_col = col
+
+                    break
+
+            if robot_row is not None:
+                break
+
+    # --------------------------------------
+    # DIBUJAR ELEMENTO EN MOVIMIENTO
+    # --------------------------------------
+
+    if robot_row is not None:
+
+        x = board_x + robot_col * cell_size
+        y = board_y + robot_row * cell_size
+
+        robot_rect = pygame.Rect(
+            x + 2,
+            y + 2,
+            cell_size - 4,
+            cell_size - 4
+        )
+
+        # ----------------------------------
+        # COMPROBAR MODO DE MOVIMIENTO
+        # ----------------------------------
+
+        using_plane = is_using_plane(node)
+
+        if using_plane:
+
+            background_color = COLORS["plane"]
+
+            border_color = COLORS["plane_border"]
+
+            sprite_value = 5
+
+        else:
+
+            background_color = COLORS["robot"]
+
+            border_color = COLORS["robot_border"]
+
+            sprite_value = 2
+
+        # ----------------------------------
+        # DIBUJAR FONDO DEL AGENTE
+        # ----------------------------------
+
+        pygame.draw.rect(
+            screen,
+            background_color,
+            robot_rect,
+            border_radius=6
+        )
+
+        pygame.draw.rect(
+            screen,
+            border_color,
+            robot_rect,
+            width=2,
+            border_radius=6
+        )
+
+        # ----------------------------------
+        # DIBUJAR IMAGEN DEL AGENTE
+        # ----------------------------------
+
+        draw_element(
+            screen,
+            sprite_value,
+            robot_rect,
+            symbol_font
+        )

@@ -4,7 +4,18 @@ from pathlib import Path
 from tkinter import Tk, filedialog
 
 from search.file_loader import load_world
-from interface.board import draw_board, load_sprites
+
+from search.search_manager import (
+    execute_search,
+    is_algorithm_available
+)
+
+from interface.board import (
+    draw_board,
+    load_sprites
+)
+
+from interface.animation import AgroBotAnimation
 
 
 # ==================================================
@@ -39,11 +50,12 @@ COLORS = {
     "border": (215, 226, 216),
     "disabled": (161, 174, 164),
     "error": (180, 65, 65),
+    "plane": (156, 116, 200),
 }
 
 
 # ==================================================
-# ALGORITMOS DISPONIBLES
+# ALGORITMOS
 # ==================================================
 
 SEARCH_ALGORITHMS = {
@@ -52,7 +64,6 @@ SEARCH_ALGORITHMS = {
         "Costo uniforme",
         "Profundidad evitando ciclos"
     ],
-
     "Informada": [
         "Avara",
         "A*"
@@ -61,17 +72,10 @@ SEARCH_ALGORITHMS = {
 
 
 # ==================================================
-# FUNCIONES GRÁFICAS
+# FUNCIONES PARA DIBUJAR
 # ==================================================
 
-def draw_text(
-    screen,
-    text,
-    x,
-    y,
-    font,
-    color=None
-):
+def draw_text(screen, text, x, y, font, color=None):
 
     if color is None:
         color = COLORS["text"]
@@ -85,13 +89,7 @@ def draw_text(
     screen.blit(rendered, (x, y))
 
 
-def draw_centered_text(
-    screen,
-    text,
-    rect,
-    font,
-    color
-):
+def draw_centered_text(screen, text, rect, font, color):
 
     rendered = font.render(
         str(text),
@@ -131,10 +129,7 @@ def shorten_text(text, font, max_width):
     if font.size(text)[0] <= max_width:
         return text
 
-    while (
-        text
-        and font.size(text + "...")[0] > max_width
-    ):
+    while text and font.size(text + "...")[0] > max_width:
         text = text[:-1]
 
     return text + "..."
@@ -223,7 +218,9 @@ class Dropdown:
     def __init__(self, rect, options):
 
         self.rect = pygame.Rect(rect)
+
         self.options = list(options)
+
         self.selected = 0
         self.expanded = False
 
@@ -234,26 +231,24 @@ class Dropdown:
     def set_options(self, options):
 
         self.options = list(options)
+
         self.selected = 0
         self.expanded = False
 
     def handle_click(self, pos):
 
-        # Abrir o cerrar el selector
         if self.rect.collidepoint(pos):
 
             self.expanded = not self.expanded
             return False
 
-        # Seleccionar una opción
         if self.expanded:
 
             for index, option in enumerate(self.options):
 
                 option_rect = pygame.Rect(
                     self.rect.x,
-                    self.rect.bottom
-                    + index * self.rect.height,
+                    self.rect.bottom + index * self.rect.height,
                     self.rect.width,
                     self.rect.height
                 )
@@ -268,7 +263,6 @@ class Dropdown:
                     return changed
 
         self.expanded = False
-
         return False
 
     def draw(self, screen, font):
@@ -320,8 +314,7 @@ class Dropdown:
 
             rect = pygame.Rect(
                 self.rect.x,
-                self.rect.bottom
-                + index * self.rect.height,
+                self.rect.bottom + index * self.rect.height,
                 self.rect.width,
                 self.rect.height
             )
@@ -345,7 +338,7 @@ class Dropdown:
                 width=1
             )
 
-            text = shorten_text(
+            option_text = shorten_text(
                 option,
                 font,
                 rect.width - 24
@@ -353,7 +346,7 @@ class Dropdown:
 
             draw_text(
                 screen,
-                text,
+                option_text,
                 rect.x + 12,
                 rect.y + 10,
                 font
@@ -361,7 +354,7 @@ class Dropdown:
 
 
 # ==================================================
-# EXPLORADOR DE ARCHIVOS TXT
+# SELECCIONAR ARCHIVO TXT
 # ==================================================
 
 def select_txt_file():
@@ -392,12 +385,6 @@ def select_txt_file():
 # ==================================================
 
 def calculate_viewport(window_size):
-    """
-    Adapta la interfaz lógica al tamaño
-    actual de la ventana.
-
-    Conserva las proporciones.
-    """
 
     width, height = window_size
 
@@ -430,10 +417,6 @@ def calculate_viewport(window_size):
 
 
 def convert_mouse_position(mouse_pos, viewport):
-    """
-    Convierte las coordenadas del mouse
-    a las coordenadas de la interfaz lógica.
-    """
 
     if not viewport.collidepoint(mouse_pos):
         return (-1, -1)
@@ -460,7 +443,7 @@ def convert_mouse_position(mouse_pos, viewport):
 def main():
 
     # ----------------------------------------------
-    # INICIALIZAR PYGAME
+    # INICIAR PYGAME
     # ----------------------------------------------
 
     pygame.init()
@@ -474,24 +457,20 @@ def main():
         "AgroBot - Simulador de búsqueda inteligente"
     )
 
-    # ----------------------------------------------
-    # CARGAR IMÁGENES PNG
-    # ----------------------------------------------
-
-    # La ventana debe existir antes de cargar
-    # imágenes mediante convert_alpha().
-
+    # Cargar imágenes
     load_sprites()
-
-    # ----------------------------------------------
-    # SUPERFICIE INTERNA
-    # ----------------------------------------------
 
     canvas = pygame.Surface(
         (LOGICAL_WIDTH, LOGICAL_HEIGHT)
     )
 
     clock = pygame.time.Clock()
+
+    # ----------------------------------------------
+    # CONTROLADOR DE ANIMACIÓN
+    # ----------------------------------------------
+
+    animation = AgroBotAnimation(speed=400)
 
     # ----------------------------------------------
     # FUENTES
@@ -526,11 +505,9 @@ def main():
     # ----------------------------------------------
 
     root_node = None
-
     current_file = "Ninguno"
 
     message = "Selecciona un archivo TXT"
-
     message_is_error = False
 
     try:
@@ -566,7 +543,6 @@ def main():
         740, 684, 435, 134
     )
 
-    # Área disponible para el tablero
     board_area = pygame.Rect(
         50, 190, 650, 540
     )
@@ -602,15 +578,7 @@ def main():
     )
 
     # ----------------------------------------------
-    # ESTADO INICIAL DEL ROBOT
-    # ----------------------------------------------
-
-    fertilizer = 0
-    fuel = 30
-    treated_crops = 0
-
-    # ----------------------------------------------
-    # RESULTADOS DE BÚSQUEDA
+    # ESTADÍSTICAS INICIALES
     # ----------------------------------------------
 
     expanded_nodes = "--"
@@ -618,8 +586,10 @@ def main():
     solution_cost = "--"
     execution_time = "--"
 
+    search_result = None
+
     # ----------------------------------------------
-    # CONFIGURACIÓN DE PANTALLA COMPLETA
+    # PANTALLA COMPLETA
     # ----------------------------------------------
 
     fullscreen = False
@@ -661,7 +631,7 @@ def main():
                 running = False
 
             # --------------------------------------
-            # PANTALLA COMPLETA CON F11
+            # TECLADO: PANTALLA COMPLETA
             # --------------------------------------
 
             elif event.type == pygame.KEYDOWN:
@@ -672,9 +642,7 @@ def main():
 
                     if fullscreen:
 
-                        previous_window_size = (
-                            screen.get_size()
-                        )
+                        previous_window_size = screen.get_size()
 
                         screen = pygame.display.set_mode(
                             (0, 0),
@@ -689,7 +657,7 @@ def main():
                         )
 
             # --------------------------------------
-            # EVENTOS DEL MOUSE
+            # CLICS DEL MOUSE
             # --------------------------------------
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -718,10 +686,8 @@ def main():
 
                 if search_type_dropdown.expanded:
 
-                    changed = (
-                        search_type_dropdown.handle_click(
-                            click_pos
-                        )
+                    changed = search_type_dropdown.handle_click(
+                        click_pos
                     )
 
                     if changed:
@@ -770,33 +736,24 @@ def main():
 
                         try:
 
-                            new_root = load_world(
-                                file_path
-                            )
+                            new_root = load_world(file_path)
 
-                            # Actualizar mundo únicamente
-                            # si el archivo es válido.
-
+                            # Actualizar mundo
                             root_node = new_root
+                            current_file = Path(file_path).name
 
-                            current_file = (
-                                Path(file_path).name
-                            )
+                            # Detener animación anterior
+                            animation.stop()
 
-                            # Reiniciar indicadores
-                            fertilizer = 0
-                            fuel = 30
-                            treated_crops = 0
+                            # Limpiar resultados
+                            search_result = None
 
                             expanded_nodes = "--"
                             depth = "--"
                             solution_cost = "--"
                             execution_time = "--"
 
-                            message = (
-                                "Mundo cargado correctamente"
-                            )
-
+                            message = "Mundo cargado correctamente"
                             message_is_error = False
 
                         except (ValueError, OSError) as error:
@@ -812,9 +769,9 @@ def main():
 
                     if root_node is not None:
 
-                        fertilizer = 0
-                        fuel = 30
-                        treated_crops = 0
+                        animation.stop()
+
+                        search_result = None
 
                         expanded_nodes = "--"
                         depth = "--"
@@ -830,14 +787,220 @@ def main():
 
                 elif start_button.collidepoint(click_pos):
 
-                    # Se implementará cuando los
-                    # algoritmos devuelvan una ruta.
+                    if root_node is None:
 
-                    message = (
-                        "La búsqueda todavía no está conectada"
-                    )
+                        message = "Primero debes cargar un mundo."
+                        message_is_error = True
 
-                    message_is_error = False
+                    else:
+
+                        # Obtener opciones seleccionadas
+                        search_type = (
+                            search_type_dropdown.get_value()
+                        )
+
+                        algorithm_name = (
+                            algorithm_dropdown.get_value()
+                        )
+
+                        # Verificar disponibilidad
+                        available = is_algorithm_available(
+                            search_type,
+                            algorithm_name
+                        )
+
+                        if not available:
+
+                            message = (
+                                f"El algoritmo '{algorithm_name}' "
+                                "todavía no está disponible."
+                            )
+
+                            message_is_error = True
+
+                        else:
+
+                            animation.stop()
+                            search_result = None
+
+                            expanded_nodes = "--"
+                            depth = "--"
+                            solution_cost = "--"
+                            execution_time = "--"
+
+                            message = f"Ejecutando {algorithm_name}..."
+                            message_is_error = False
+
+                            try:
+
+                                # Ejecutar algoritmo seleccionado
+                                result = execute_search(
+                                    search_type,
+                                    algorithm_name,
+                                    root_node
+                                )
+
+                                # Comprobar campos necesarios
+                                required_keys = (
+                                    "found",
+                                    "path",
+                                    "cost",
+                                    "expanded_nodes",
+                                    "depth",
+                                    "execution_time",
+                                    "status"
+                                )
+
+                                missing_keys = [
+                                    key
+                                    for key in required_keys
+                                    if key not in result
+                                ]
+
+                                if missing_keys:
+
+                                    raise ValueError(
+                                        "El algoritmo no devolvió "
+                                        "todos los campos requeridos: "
+                                        + ", ".join(missing_keys)
+                                    )
+
+                                search_result = result
+
+                                # ----------------------------------
+                                # ESTADÍSTICAS
+                                # ----------------------------------
+
+                                expanded_nodes = str(
+                                    result["expanded_nodes"]
+                                )
+
+                                depth = (
+                                    str(result["depth"])
+                                    if result["depth"] is not None
+                                    else "--"
+                                )
+
+                                solution_cost = (
+                                    f'{result["cost"]:.1f}'
+                                    if result["cost"] is not None
+                                    else "--"
+                                )
+
+                                execution_time = (
+                                    f'{result["execution_time"]:.3f} s'
+                                )
+
+                                # ----------------------------------
+                                # ANIMACIÓN
+                                # ----------------------------------
+
+                                if result["found"] and result["path"]:
+
+                                    animation.load_path(
+                                        result["path"]
+                                    )
+
+                                    animation.start()
+
+                                    message = (
+                                        f"{algorithm_name}: "
+                                        "solución encontrada. "
+                                        "Reproduciendo ruta..."
+                                    )
+
+                                    message_is_error = False
+
+                                else:
+
+                                    message = result["status"]
+                                    message_is_error = not result["found"]
+
+                            except (
+                                NotImplementedError,
+                                ValueError,
+                                KeyError,
+                                TypeError
+                            ) as error:
+
+                                animation.stop()
+                                search_result = None
+
+                                message = (
+                                    f"Error en {algorithm_name}: "
+                                    f"{error}"
+                                )
+
+                                message_is_error = True
+
+        # ==========================================
+        # ACTUALIZAR ANIMACIÓN
+        # ==========================================
+
+        animation.update()
+
+        current_node = animation.get_current_node()
+
+        if current_node is None:
+            current_node = root_node
+
+        if animation.finished:
+
+            animation.finished = False
+
+            message = "Animación finalizada."
+            message_is_error = False
+
+        # ==========================================
+        # OBTENER ESTADO ACTUAL DEL ROBOT
+        # ==========================================
+
+        fertilizer = 0
+        fuel = 30
+        treated_crops = 0
+        total_crops = 0
+
+        if root_node is not None:
+
+            total_crops = len(
+                root_node.get_dry_crops()
+            )
+
+        if current_node is not None:
+
+            fertilizer = (
+                current_node.get_fertilizer_amount()
+            )
+
+            fuel = (
+                current_node.get_fuel_remaining()
+            )
+
+            treated_crops = len(
+                current_node.get_fertilized_crops()
+            )
+
+        # ==========================================
+        # IDENTIFICAR MODO DE TRANSPORTE
+        # ==========================================
+
+        transport_status = "Modo: AgroBot"
+
+        if current_node is not None:
+
+            if (
+                current_node.get_plane_boarded()
+                and current_node.get_fuel_remaining() > 0
+            ):
+
+                transport_status = "Modo: Avioneta"
+
+            elif (
+                current_node.get_plane_boarded()
+                and current_node.get_fuel_remaining() == 0
+            ):
+
+                transport_status = "Modo: AgroBot"
 
         # ==========================================
         # DIBUJAR FONDO
@@ -870,7 +1033,7 @@ def main():
         )
 
         # ==========================================
-        # DIBUJAR PANELES
+        # PANELES
         # ==========================================
 
         draw_panel(canvas, board_panel)
@@ -890,12 +1053,13 @@ def main():
             section_font
         )
 
-        if root_node is not None:
+        if current_node is not None:
 
             draw_board(
                 canvas,
-                root_node.get_matrix(),
-                board_area
+                current_node.get_matrix(),
+                board_area,
+                node=current_node
             )
 
         # ==========================================
@@ -939,7 +1103,6 @@ def main():
             section_font
         )
 
-        # Archivo actual
         draw_text(
             canvas,
             "ARCHIVO DEL MUNDO",
@@ -963,7 +1126,6 @@ def main():
             COLORS["muted"]
         )
 
-        # Botón para cargar archivo
         draw_button(
             canvas,
             load_button,
@@ -972,7 +1134,6 @@ def main():
             mouse_pos
         )
 
-        # Tipo de búsqueda
         draw_text(
             canvas,
             "TIPO DE BÚSQUEDA",
@@ -981,7 +1142,6 @@ def main():
             label_font
         )
 
-        # Algoritmo
         draw_text(
             canvas,
             "ALGORITMO",
@@ -990,17 +1150,15 @@ def main():
             label_font
         )
 
-        # Botón iniciar búsqueda
         draw_button(
             canvas,
             start_button,
             "Iniciar búsqueda",
             label_font,
             mouse_pos,
-            enabled=False
+            enabled=root_node is not None
         )
 
-        # Botón reiniciar
         draw_button(
             canvas,
             reset_button,
@@ -1012,7 +1170,7 @@ def main():
 
         draw_text(
             canvas,
-            "La búsqueda se habilitará al integrar los algoritmos.",
+            "Selecciona un algoritmo y presiona Iniciar búsqueda.",
             760,
             528,
             small_font,
@@ -1031,13 +1189,21 @@ def main():
             section_font
         )
 
-        total_crops = 0
+        # Indicador del modo de transporte
+        transport_color = (
+            COLORS["plane"]
+            if transport_status == "Modo: Avioneta"
+            else COLORS["primary"]
+        )
 
-        if root_node is not None:
-
-            total_crops = len(
-                root_node.get_dry_crops()
-            )
+        draw_text(
+            canvas,
+            transport_status,
+            1010,
+            590,
+            small_font,
+            transport_color
+        )
 
         draw_stat(
             canvas,
@@ -1142,9 +1308,6 @@ def main():
             text_font
         )
 
-        # Dibujar las opciones al final para que
-        # aparezcan encima de los demás controles.
-
         search_type_dropdown.draw_options(
             canvas,
             text_font
@@ -1181,15 +1344,12 @@ def main():
         )
 
         # ==========================================
-        # ADAPTAR A LA VENTANA REAL
+        # ADAPTAR A LA VENTANA
         # ==========================================
 
         screen.fill(
             COLORS["background"]
         )
-
-        # Recalcular el área visible después
-        # de posibles cambios de tamaño.
 
         _, viewport = calculate_viewport(
             screen.get_size()
@@ -1205,21 +1365,15 @@ def main():
             viewport.topleft
         )
 
-        # Actualizar pantalla
         pygame.display.flip()
 
-        # Controlar FPS
         clock.tick(FPS)
-
-    # ==============================================
-    # CERRAR PYGAME
-    # ==============================================
 
     pygame.quit()
 
 
 # ==================================================
-# PUNTO DE ENTRADA
+# EJECUTAR
 # ==================================================
 
 if __name__ == "__main__":
