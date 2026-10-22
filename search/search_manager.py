@@ -3,6 +3,7 @@
 # ==========================================
 
 from search.bfs import breadth_search
+from search.dfs import depth_search
 from search.ucs import uniform_cost_search
 
 
@@ -18,7 +19,7 @@ ALGORITHMS = {
 
         "Costo uniforme": uniform_cost_search,
 
-        "Profundidad evitando ciclos": None,
+        "Profundidad evitando ciclos": depth_search,
     },
 
     "Informada": {
