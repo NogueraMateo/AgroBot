@@ -1,7 +1,8 @@
-from models.node import Node
+from models.node import Node, get_next_possible_operators
 
 import copy
 
+from models.operators import MOVEMENTS
 
 # ==============================================
 # VERIFICAR OBJETIVO
@@ -20,6 +21,53 @@ def is_node_the_goal(node: Node):
     )
 
     return dry_crops.issubset(treated_crops)
+
+
+# ==========================================
+# GENERAR SUCESORES
+# ==========================================
+
+def generate_successors(node, state_set: set = None):
+    """
+    Genera los estados a los que AgroBot
+    puede llegar mediante un movimiento.
+    """
+
+    successors = []
+
+    current_row, current_col = node.get_bot_pos()
+
+    # Obtener movimientos válidos
+    possible_operators = get_next_possible_operators(
+        node
+    )
+
+    for operator in possible_operators:
+
+        # Obtener desplazamiento
+        delta_row, delta_col = MOVEMENTS[operator]
+
+        # Calcular nueva posición
+        next_row = current_row + delta_row
+        next_col = current_col + delta_col
+
+        # Crear el siguiente estado
+        next_node = get_next_move_node(
+            node.get_matrix(),
+            next_row,
+            next_col,
+            node
+        )
+
+        if state_set is not None:
+            if next_node.get_state_key() in state_set:
+                continue
+
+            state_set.add(next_node.get_state_key())
+        
+        successors.append(next_node)
+        
+    return successors
 
 
 # ==============================================
@@ -261,3 +309,30 @@ def get_next_move_node(
     )
 
     return new_node
+
+
+# ==========================================
+# RECONSTRUIR LA SOLUCIÓN
+# ==========================================
+
+def reconstruct_path(goal_node):
+    """
+    Reconstruye la secuencia de nodos
+    desde el estado inicial hasta el objetivo.
+    """
+
+    path = []
+
+    current_node = goal_node
+
+    while current_node is not None:
+
+        path.append(current_node)
+
+        current_node = current_node.parent_node
+
+    # Los nodos se recorrieron desde el
+    # objetivo hasta el estado inicial.
+    path.reverse()
+
+    return path
