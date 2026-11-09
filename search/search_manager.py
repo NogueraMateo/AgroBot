@@ -4,6 +4,7 @@
 
 from search.bfs import breadth_search
 from search.dfs import depth_search
+from search.informed import a_star_search, greedy_search
 from search.ucs import uniform_cost_search
 
 
@@ -24,9 +25,9 @@ ALGORITHMS = {
 
     "Informada": {
 
-        "Avara": None,
+        "Avara": greedy_search,
 
-        "A*": None,
+        "A*": a_star_search,
     }
 }
 
